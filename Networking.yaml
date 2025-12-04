@@ -1,0 +1,195 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: A simple CloudFormation template to create an VPC
+
+
+Parameters: 
+  # CIDR range for VPC
+  VpcCIDR:
+    Type: String 
+    Default: 13.0.0.0/16
+    Description: Please enter CidrBlock 
+
+  #Private Subnet CIDR
+  subnetCIDRA:
+    Type: String 
+    Default: 13.0.1.0/24
+    Description: Enter your subnet CIDR
+
+  #Public Subnet CIDR
+  subnetCIDRB:
+    Type: String 
+    Default: 13.0.3.0/24
+    Description: Enter your subnet CIDR
+
+
+
+Resources:
+  # Creating VPC
+  myVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 
+        Ref: VpcCIDR
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      Tags:
+      - Key: Name
+        Value: myVPC
+
+
+ #Internet-gateway       
+  myIGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+      - Key: Name
+        Value: myIGW
+
+  #Attach IGW to VPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId:
+        Ref: myVPC
+      InternetGatewayId:
+        Ref: myIGW 
+
+  #Private Subnet
+  mySubnetPri:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: 
+        Ref: myVPC
+      CidrBlock: 
+        Ref: subnetCIDRA
+      AvailabilityZone: "us-east-1a"
+      Tags:
+      - Key: Name
+        Value: private
+  
+  #Public Subnet
+  mySubnetPub:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: 
+        Ref: myVPC
+      CidrBlock: 
+        Ref: subnetCIDRB
+      AvailabilityZone: "us-east-1a"
+      Tags:
+      - Key: Name
+        Value: public
+
+
+  #Private Routetable
+  myRouteTablePrivate:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:  
+        Ref: myVPC
+      Tags:
+      - Key: Name
+        Value: private
+  
+  #Public Routetable
+  myRouteTablePublic:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId:  
+        Ref: myVPC
+      Tags:
+      - Key: Name
+        Value: public
+
+  #Route to IGW
+  myCarrierRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId:
+        Ref: myRouteTablePublic
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId:
+        Ref: myIGW  
+
+  #Associate subnet to routetable public
+  mySubnetRouteTableAssociationPublic:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: mySubnetPub
+      RouteTableId:
+        Ref: myRouteTablePublic
+
+  #Associate subnet to routetable private
+  mySubnetRouteTableAssociationPrivate:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        Ref: mySubnetPri
+      RouteTableId:
+        Ref: myRouteTablePrivate
+
+  InstanceSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow http to client host
+      VpcId: 
+        Ref: myVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+
+  PrivateSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow Bastion Host
+      VpcId: 
+        Ref: myVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId: 
+            Ref: InstanceSecurityGroup
+
+
+Outputs:
+  VPCId:
+    Value: 
+      Ref: myVPC
+    Export:
+      Name: MyStack-VPCId
+
+  PublicSubnetId:
+    Value: 
+      Ref: mySubnetPub
+    Export:
+      Name: MyStack-PublicSubnetId
+
+  PublicSG:
+    Value:
+      Ref: InstanceSecurityGroup
+    Export:
+      Name: PublicSG
+
+  PrivateSG:
+    Value:
+      Ref: PrivateSecurityGroup
+    Export:
+      Name: PrivateSG
+
+  PrivateSubnetId:
+    Value: 
+      Ref: mySubnetPri
+    Export:
+      Name: PrivateSubnetId

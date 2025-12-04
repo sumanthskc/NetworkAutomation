@@ -1,0 +1,74 @@
+name: Deploy StackSet
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::881490088884:role/AWS-GIthub-OIDC
+          aws-region: us-east-1
+
+      - name: Package CloudFormation Template
+        run: |
+          aws cloudformation package \
+            --template-file Networking.yaml \
+            --s3-bucket stackset-artifacts-881490088884-us-east-1 \
+            --output-template-file packaged.yaml
+
+      - name: Create or Update StackSet
+        run: |
+          STACKSET_NAME="Networking-StackSet"
+
+          if aws cloudformation describe-stack-set --stack-set-name $STACKSET_NAME >/dev/null 2>&1; then
+            echo "Updating existing StackSet..."
+            aws cloudformation update-stack-set \
+              --stack-set-name $STACKSET_NAME \
+              --template-body file://packaged.yaml \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --administration-role-arn arn:aws:iam::881490088884:role/AWSCloudFormationStackSetAdministrationRole \
+              --execution-role-name AWSCloudFormationStackSetExecutionRole
+          else
+            echo "Creating new StackSet..."
+            aws cloudformation create-stack-set \
+              --stack-set-name $STACKSET_NAME \
+              --template-body file://packaged.yaml \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --administration-role-arn arn:aws:iam::881490088884:role/AWSCloudFormationStackSetAdministrationRole \
+              --execution-role-name AWSCloudFormationStackSetExecutionRole
+          fi
+
+      - name: Deploy StackSet Instances
+        run: |
+
+          echo "Deploying to Account 414329322210 (WITH PARAMETER OVERRIDES)"
+          aws cloudformation create-stack-instances \
+            --stack-set-name Networking-StackSet \
+            --accounts 414329322210 \
+            --regions us-east-1 \
+            --operation-preferences FailureToleranceCount=1,MaxConcurrentCount=1 \
+            --parameter-overrides \
+                ParameterKey=VpcCIDR,ParameterValue=10.1.0.0/16 \
+                ParameterKey=subnetCIDRA,ParameterValue=10.1.1.0/24 \
+                ParameterKey=subnetCIDRB,ParameterValue=10.1.2.0/24
+
+          echo "Deploying to Account 417371242369 (DEFAULT TEMPLATE PARAMETERS)"
+          aws cloudformation create-stack-instances \
+            --stack-set-name Networking-StackSet \
+            --accounts 417371242369 \
+            --regions us-east-1 \
+            --operation-preferences FailureToleranceCount=1,MaxConcurrentCount=1
