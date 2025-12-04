@@ -52,11 +52,12 @@ jobs:
               --execution-role-name AWSCloudFormationStackSetExecutionRole
           fi
 
-      - name: Deploy StackSet Instances
+      - name: Deploy StackSet Instances (Sequential with Waiters)
         run: |
 
           echo "Deploying to Account 414329322210 (WITH PARAMETER OVERRIDES)"
-          aws cloudformation create-stack-instances \
+
+          OPERATION_ID=$(aws cloudformation create-stack-instances \
             --stack-set-name Networking-StackSet \
             --accounts 414329322210 \
             --regions us-east-1 \
@@ -64,11 +65,24 @@ jobs:
             --parameter-overrides \
                 ParameterKey=VpcCIDR,ParameterValue=10.1.0.0/16 \
                 ParameterKey=subnetCIDRA,ParameterValue=10.1.1.0/24 \
-                ParameterKey=subnetCIDRB,ParameterValue=10.1.2.0/24
+                ParameterKey=subnetCIDRB,ParameterValue=10.1.2.0/24 \
+            --query 'OperationId' --output text)
+
+          echo "Waiting for operation $OPERATION_ID to complete..."
+          aws cloudformation wait stack-set-operation-succeeded \
+            --stack-set-name Networking-StackSet \
+            --operation-id $OPERATION_ID
 
           echo "Deploying to Account 417371242369 (DEFAULT TEMPLATE PARAMETERS)"
-          aws cloudformation create-stack-instances \
+
+          OPERATION_ID_2=$(aws cloudformation create-stack-instances \
             --stack-set-name Networking-StackSet \
             --accounts 417371242369 \
             --regions us-east-1 \
-            --operation-preferences FailureToleranceCount=1,MaxConcurrentCount=1
+            --operation-preferences FailureToleranceCount=1,MaxConcurrentCount=1 \
+            --query 'OperationId' --output text)
+
+          echo "Waiting for second operation $OPERATION_ID_2 to complete..."
+          aws cloudformation wait stack-set-operation-succeeded \
+            --stack-set-name Networking-StackSet \
+            --operation-id $OPERATION_ID_2
