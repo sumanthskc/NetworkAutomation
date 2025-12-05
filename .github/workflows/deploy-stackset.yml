@@ -52,6 +52,18 @@ jobs:
               --execution-role-name AWSCloudFormationStackSetExecutionRole
           fi
 
+          echo "Fetching latest StackSet OperationId..."
+          UPDATE_OPERATION_ID=$(aws cloudformation list-stack-set-operations \
+              --stack-set-name $STACKSET_NAME \
+              --max-items 1 \
+              --query "Summaries[0].OperationId" \
+              --output text)
+
+          echo "Waiting for StackSet update to finish: $UPDATE_OPERATION_ID"
+          aws cloudformation wait stack-set-operation-succeeded \
+              --stack-set-name $STACKSET_NAME \
+              --operation-id $UPDATE_OPERATION_ID
+
       - name: Deploy StackSet Instances (SEQUENTIAL WITH WAIT)
         run: |
 
