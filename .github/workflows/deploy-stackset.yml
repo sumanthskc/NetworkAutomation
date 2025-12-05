@@ -36,110 +36,65 @@ jobs:
 
           if aws cloudformation describe-stack-set --stack-set-name $STACKSET_NAME >/dev/null 2>&1; then
             echo "Updating existing StackSet..."
-            UPDATE_OPERATION_ID=$(aws cloudformation update-stack-set \
+            aws cloudformation update-stack-set \
               --stack-set-name $STACKSET_NAME \
               --template-body file://packaged.yaml \
               --capabilities CAPABILITY_NAMED_IAM \
               --administration-role-arn arn:aws:iam::881490088884:role/AWSCloudFormationStackSetAdministrationRole \
-              --execution-role-name AWSCloudFormationStackSetExecutionRole \
-              --query "OperationId" --output text)
+              --execution-role-name AWSCloudFormationStackSetExecutionRole
           else
             echo "Creating new StackSet..."
-            UPDATE_OPERATION_ID=$(aws cloudformation create-stack-set \
+            aws cloudformation create-stack-set \
               --stack-set-name $STACKSET_NAME \
               --template-body file://packaged.yaml \
               --capabilities CAPABILITY_NAMED_IAM \
               --administration-role-arn arn:aws:iam::881490088884:role/AWSCloudFormationStackSetAdministrationRole \
-              --execution-role-name AWSCloudFormationStackSetExecutionRole \
-              --query "OperationId" --output text)
+              --execution-role-name AWSCloudFormationStackSetExecutionRole
           fi
 
-          echo "Waiting for StackSet update to finish: $UPDATE_OPERATION_ID"
-
-          while true; do
-            STATUS=$(aws cloudformation describe-stack-set-operation \
+          echo "Fetching latest StackSet OperationId..."
+          UPDATE_OPERATION_ID=$(aws cloudformation list-stack-set-operations \
               --stack-set-name $STACKSET_NAME \
-              --operation-id $UPDATE_OPERATION_ID \
-              --query "StackSetOperation.Status" \
+              --max-items 1 \
+              --query "Summaries[0].OperationId" \
               --output text)
 
-            echo "Current status: $STATUS"
+          echo "Waiting for StackSet update to finish: $UPDATE_OPERATION_ID"
+          aws cloudformation wait stack-set-operation-succeeded \
+              --stack-set-name $STACKSET_NAME \
+              --operation-id $UPDATE_OPERATION_ID
 
-            if [ "$STATUS" == "SUCCEEDED" ]; then
-              echo "StackSet update completed successfully."
-              break
-            elif [ "$STATUS" == "FAILED" ] || [ "$STATUS" == "STOPPED" ]; then
-              echo "StackSet update failed or stopped."
-              exit 1
-            fi
-
-            sleep 20
-          done
-
-      - name: Deploy StackSet Instances (SEQUENTIAL WITH POLLING)
+      - name: Deploy StackSet Instances (SEQUENTIAL WITH WAIT)
         run: |
-          STACKSET_NAME="Networking-StackSet"
 
           echo "Deploying to Account 414329322210 (WITH PARAMETER OVERRIDES)"
 
           OPERATION_ID=$(aws cloudformation create-stack-instances \
-            --stack-set-name $STACKSET_NAME \
+            --stack-set-name Networking-StackSet \
             --accounts 414329322210 \
             --regions us-east-1 \
             --operation-preferences FailureToleranceCount=1,MaxConcurrentCount=1 \
             --parameter-overrides \
-              ParameterKey=VpcCIDR,ParameterValue=10.1.0.0/16 \
-              ParameterKey=subnetCIDRA,ParameterValue=10.1.1.0/24 \
-              ParameterKey=subnetCIDRB,ParameterValue=10.1.2.0/24 \
+                ParameterKey=VpcCIDR,ParameterValue=10.1.0.0/16 \
+                ParameterKey=subnetCIDRA,ParameterValue=10.1.1.0/24 \
+                ParameterKey=subnetCIDRB,ParameterValue=10.1.2.0/24 \
             --query "OperationId" --output text)
 
-          echo "Polling operation $OPERATION_ID ..."
-          while true; do
-            STATUS=$(aws cloudformation describe-stack-set-operation \
-              --stack-set-name $STACKSET_NAME \
-              --operation-id $OPERATION_ID \
-              --query "StackSetOperation.Status" \
-              --output text)
-
-            echo "Current status: $STATUS"
-
-            if [ "$STATUS" == "SUCCEEDED" ]; then
-              echo "Instance deployment 1 completed."
-              break
-            elif [ "$STATUS" == "FAILED" ] || [ "$STATUS" == "STOPPED" ]; then
-              echo "Instance deployment 1 failed or stopped."
-              exit 1
-            fi
-
-            sleep 20
-          done
+          echo "Waiting for operation $OPERATION_ID to complete..."
+          aws cloudformation wait stack-set-operation-succeeded \
+            --stack-set-name Networking-StackSet \
+            --operation-id $OPERATION_ID
 
           echo "Deploying to Account 417371242369 (DEFAULT PARAMETERS)"
 
           OPERATION_ID_2=$(aws cloudformation create-stack-instances \
-            --stack-set-name $STACKSET_NAME \
+            --stack-set-name Networking-StackSet \
             --accounts 417371242369 \
             --regions us-east-1 \
             --operation-preferences FailureToleranceCount=1,MaxConcurrentCount=1 \
             --query "OperationId" --output text)
 
-          echo "Polling operation $OPERATION_ID_2 ..."
-          while true; do
-            STATUS2=$(aws cloudformation describe-stack-set-operation \
-              --stack-set-name $STACKSET_NAME \
-              --operation-id $OPERATION_ID_2 \
-              --query "StackSetOperation.Status" \
-              --output text)
-
-            echo "Current status: $STATUS2"
-
-            if [ "$STATUS2" == "SUCCEEDED" ]; then
-              echo "Instance deployment 2 completed."
-              break
-            elif [ "$STATUS2" == "FAILED" ] || [ "$STATUS2" == "STOPPED" ]; then
-              echo "Instance deployment 2 failed or stopped."
-              exit 1
-            fi
-
-            sleep 20
-          done
+          echo "Waiting for operation $OPERATION_ID_2 to complete..."
+          aws cloudformation wait stack-set-operation-succeeded \
+            --stack-set-name Networking-StackSet \
+            --operation-id $OPERATION_ID_2
